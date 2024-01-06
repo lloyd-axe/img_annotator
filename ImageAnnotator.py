@@ -1,7 +1,7 @@
 from ToolsConstants import (ANNOTATION, IMAGE_NAME, IMAGE_PATH, BBOX_COORDS, CANVAS_COORDS, TEXT_COORDS, BBOX_UUID,
                             XUL, XLR, YUL, YLR)
 
-from tkinter import filedialog, simpledialog, Listbox
+from tkinter import filedialog, simpledialog, Listbox, ttk, BooleanVar
 from PIL import Image, ImageTk
 import tkinter as tk
 import pandas as pd
@@ -63,6 +63,20 @@ class ImageAnnotatorApp:
 
         self.delete_button = tk.Button(root, text="Delete Box", command=self.delete_selected_bbox)
         self.delete_button.pack(side=tk.LEFT, padx=10)
+
+        # Create Checkbutton and Entry for auto-fill options
+        self.auto_fill_var = BooleanVar()
+        self.auto_fill_var.set(False)  # Default value
+        self.auto_fill_checkbox = ttk.Checkbutton(
+            root,
+            text="Auto Annotate",
+            variable=self.auto_fill_var,
+            command=self.toggle_auto_fill
+        )
+        self.auto_fill_checkbox.pack(side=tk.BOTTOM, padx=10)
+
+        self.auto_fill_entry = tk.Entry(root, state=tk.DISABLED)
+        self.auto_fill_entry.pack(side=tk.BOTTOM, padx=10)
         # Initialize slideshow with the first image if available
         self.show_image()
 
@@ -71,6 +85,12 @@ class ImageAnnotatorApp:
         self.canvas.bind("<Button-1>", self.start_bbox)
         self.canvas.bind("<B1-Motion>", self.draw_bbox)
         self.canvas.bind("<ButtonRelease-1>", self.stop_bbox)
+
+    def toggle_auto_fill(self):
+        if self.auto_fill_var.get():
+            self.auto_fill_entry.config(state=tk.NORMAL)
+        else:
+            self.auto_fill_entry.config(state=tk.DISABLED)
 
     def open_images(self):
         image_paths = filedialog.askopenfilenames(filetypes=[("Image files", "*.png;*.jpg;*.jpeg")])
@@ -136,8 +156,12 @@ class ImageAnnotatorApp:
         self.save_button.place(x=cur_x, y=cur_y)
         self.save_button.pack(side=tk.LEFT, padx=10)
 
-        # Show popup with a textbox
-        annotation_text = simpledialog.askstring("Annotation", "Enter annotation:")
+        if self.auto_fill_var.get():
+            annotation_text = self.auto_fill_entry.get()
+        else:
+            # Show popup with a textbox
+            annotation_text = simpledialog.askstring("Annotation", "Enter annotation:")
+
         if annotation_text:
             self.add_annotation(annotation_text)
 
@@ -221,6 +245,7 @@ class ImageAnnotatorApp:
 
 
 if __name__ == "__main__":
+    #TODO : Fix Element positioning
     root = tk.Tk()
     app = ImageAnnotatorApp(root)
     root.mainloop()
