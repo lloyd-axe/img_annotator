@@ -1,23 +1,29 @@
-import tkinter as tk
+from ToolsConstants import (ANNOTATION, IMAGE_NAME, IMAGE_PATH, BBOX_COORDS, CANVAS_COORDS, TEXT_COORDS, BBOX_UUID,
+                            XUL, XLR, YUL, YLR)
+
 from tkinter import filedialog, simpledialog, Listbox
 from PIL import Image, ImageTk
-import os
-import uuid
+import tkinter as tk
 import pandas as pd
+import uuid
+import os
 
-from ToolsConstants import ANNOTATION, IMAGE_NAME, IMAGE_PATH, BBOX_COORDS, CANVAS_COORDS, TEXT_COORDS, BBOX_UUID,\
-    XUL, XLR, YUL, YLR
 
-class BoundingBoxApp:
+class ImageAnnotatorApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Bounding Box Annotation App")
+        self.root.title("Simple Image Annotator App")
 
         self.image_paths = []
         self.current_image_index = 0
+        self.selected_annotation_index = None
         self.image_path = None
         self.tk_image = None
+        self.rect_id = None
+        self.start_x, self.start_y = None, None
 
+        # Data & cache
+        self.coords_name = [XUL, YUL, XLR, YLR]  # UL = upper left, LR = Lower Right
         self.bbox_data = pd.DataFrame({
             IMAGE_NAME: [],
             IMAGE_PATH: [],
@@ -26,7 +32,6 @@ class BoundingBoxApp:
             ANNOTATION: []
         })
         self.application_cache = {}
-        self.coords_name = [XUL, YUL, XLR, YLR]  # UL = upper left, LR = Lower Right
 
         # Create Canvas for displaying the image
         self.canvas = tk.Canvas(root)
@@ -50,9 +55,6 @@ class BoundingBoxApp:
         self.next_button = tk.Button(root, text="Next", command=self.show_next_image)
         self.next_button.pack(side=tk.LEFT, padx=10)
 
-        # Initialize slideshow with the first image if available
-        self.show_image()
-
         self.save_button = tk.Button(root, text="Save Annotations", command=self.save_annotations)
         self.save_button.pack_forget()  # Hide the button initially
 
@@ -61,8 +63,11 @@ class BoundingBoxApp:
 
         self.delete_button = tk.Button(root, text="Delete Box", command=self.delete_selected_bbox)
         self.delete_button.pack(side=tk.LEFT, padx=10)
-        self.annotations_listbox.bind("<<ListboxSelect>>", self.on_select_annotation)
+        # Initialize slideshow with the first image if available
+        self.show_image()
 
+        # Bind elements
+        self.annotations_listbox.bind("<<ListboxSelect>>", self.on_select_annotation)
         self.canvas.bind("<Button-1>", self.start_bbox)
         self.canvas.bind("<B1-Motion>", self.draw_bbox)
         self.canvas.bind("<ButtonRelease-1>", self.stop_bbox)
@@ -80,9 +85,7 @@ class BoundingBoxApp:
             image = Image.open(self.image_path)
             self.tk_image = ImageTk.PhotoImage(image)
             self.canvas.config(width=self.tk_image.width(), height=self.tk_image.height())
-            img_id = self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
-            print('img_id', img_id)
-            # Display the file name above the image
+            self.canvas.create_image(0, 0, anchor=tk.NW, image=self.tk_image)
             filename = os.path.basename(self.image_path)
             self.filename_label.config(text=filename)
 
@@ -100,8 +103,7 @@ class BoundingBoxApp:
                     self.annotations_listbox.insert(tk.END, v[ANNOTATION])
 
     def draw_saved_bbox(self, canvas_coords, annotation, text_coords):
-        rect_id = self.canvas.create_rectangle(canvas_coords, outline='red')
-        print('rect id', rect_id)
+        self.canvas.create_rectangle(canvas_coords, outline='red')
         self.canvas.create_text(text_coords, text=annotation, anchor=tk.W, fill='red')
 
     def show_previous_image(self):
@@ -117,16 +119,15 @@ class BoundingBoxApp:
     def start_bbox(self, event):
         self.start_x = self.canvas.canvasx(event.x)
         self.start_y = self.canvas.canvasy(event.y)
-        self.rect = self.canvas.create_rectangle(
+        self.rect_id = self.canvas.create_rectangle(
             self.start_x, self.start_y, self.start_x, self.start_y, outline='red'
         )
-        print('rect id', self.rect)
         self.save_button.pack_forget()  # Hide the button when a new box is started
 
     def draw_bbox(self, event):
         cur_x = self.canvas.canvasx(event.x)
         cur_y = self.canvas.canvasy(event.y)
-        self.canvas.coords(self.rect, self.start_x, self.start_y, cur_x, cur_y)
+        self.canvas.coords(self.rect_id, self.start_x, self.start_y, cur_x, cur_y)
 
     def stop_bbox(self, event):
         # Update the position of the "Save Annotations" button
@@ -143,10 +144,10 @@ class BoundingBoxApp:
     def add_annotation(self, annotation_text):
         # Save bounding box coordinates and annotation to a file or process them as needed
         box_uuid = str(uuid.uuid4())
-        canvas_coords = self.canvas.coords(self.rect)
+        canvas_coords = self.canvas.coords(self.rect_id)
         bbox_coords = {self.coords_name[n]: canvas_coords[n] for n in range(len(self.coords_name))}
         text_coords = bbox_coords[XUL] + 2, bbox_coords[YUL] + 5
-        annotation_label = f'{annotation_text}|{self.rect}'
+        annotation_label = f'{annotation_text}|{self.rect_id}'
         self.canvas.create_text(text_coords, text=annotation_label, anchor=tk.W, fill='red')
         image_name = os.path.basename(self.image_path)
 
@@ -174,6 +175,17 @@ class BoundingBoxApp:
     def save_annotations(self):
         # Save bounding box coordinates and annotation to a file or process them as needed
         print(self.bbox_data.to_dict(orient='records'))
+        # Prompt the user to select a directory and input a custom filename
+        file_path = filedialog.asksaveasfilename(
+            title="Save Annotations CSV",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")]
+        )
+        # If the user cancels the file selection, return without saving
+        if not file_path:
+            return
+        # Save bounding box coordinates and annotations to a CSV file
+        self.bbox_data.to_csv(file_path, index=False)
 
     def clear_annotations(self):
         self.canvas.delete("all")
@@ -185,8 +197,8 @@ class BoundingBoxApp:
             self.selected_annotation_index = selected_index[0]
 
     def delete_selected_bbox(self):
-        self.canvas.delete("all")
-        if hasattr(self, 'selected_annotation_index'):
+        if self.selected_annotation_index:
+            self.canvas.delete("all")
             selected_annotation = self.annotations_listbox.get(self.selected_annotation_index)
             new_application_cache = {}
             bboc_uuid_to_del = None
@@ -207,7 +219,8 @@ class BoundingBoxApp:
         else:
             print("No annotation selected")
 
+
 if __name__ == "__main__":
     root = tk.Tk()
-    app = BoundingBoxApp(root)
+    app = ImageAnnotatorApp(root)
     root.mainloop()
